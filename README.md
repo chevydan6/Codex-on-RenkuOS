@@ -3,6 +3,11 @@
 Experimental native x86-64 Codex CLI port for RenkuOS, the Haiku-based OS.
 This community port is not an official OpenAI release.
 
+![Codex running natively on the RenkuOS desktop](docs/images/codex-renkuos.png)
+
+The installed native build running on RenkuOS, showing a real shell command
+and response. RenkuOS reports its Haiku foundation through `uname`.
+
 ## Quickstart on RenkuOS
 
 1. Download the [x86-64 RenkuOS installer](https://github.com/chevydan6/codex-renkuos/releases/download/renkuos-v0.171.0-alpha.5-1/codex-renkuos-0.171.0-alpha.5-1-x86_64.hpkg).
