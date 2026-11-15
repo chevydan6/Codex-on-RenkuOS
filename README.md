@@ -1,83 +1,62 @@
-> **RenkuOS port:** See [README.RENKUOS.md](README.RENKUOS.md) for installation, sign-in, native build notes, and testing limits.
+# Codex for RenkuOS
 
-<p align="center"><strong>Codex CLI</strong> is a coding agent from OpenAI that runs locally on your computer.
-<p align="center">
-  <img src="https://github.com/openai/codex/blob/main/.github/codex-cli-splash.png" alt="Codex CLI splash" width="80%" />
-</p>
-</br>
-If you want Codex in your code editor (VS Code, Cursor, Windsurf), <a href="https://developers.openai.com/codex/ide">install in your IDE.</a>
-</br>If you want the desktop app experience, run <code>codex app</code> or visit <a href="https://chatgpt.com/codex?app-landing-page=true">the Codex App page</a>.
-</br>If you are looking for the <em>cloud-based agent</em> from OpenAI, <strong>Codex Web</strong>, go to <a href="https://chatgpt.com/codex">chatgpt.com/codex</a>.</p>
+Experimental native x86-64 Codex CLI port for RenkuOS, the Haiku-based OS.
+This community port is not an official OpenAI release.
 
----
+## Quickstart on RenkuOS
 
-## Quickstart
+1. Download the [x86-64 RenkuOS installer](https://github.com/chevydan6/codex-renkuos/releases/download/renkuos-v0.171.0-alpha.5-1/codex-renkuos-0.171.0-alpha.5-1-x86_64.hpkg).
+2. Double-click the `.hpkg` on RenkuOS and follow the package installer.
+3. Open **Applications → Codex**, or use a desktop shortcut to the installed launcher.
+4. Read the no-sandbox warning and type `yes` if you agree to continue.
 
-### Installing and running Codex CLI
+You can also install from Terminal:
 
-Run the following on Mac or Linux to install Codex CLI:
-
-```shell
-curl -fsSL https://chatgpt.com/codex/install.sh | sh
+```sh
+pkgman install ./codex-renkuos-0.171.0-alpha.5-1-x86_64.hpkg
 ```
 
-Run the following on Windows to install Codex CLI:
+[All releases and checksums](https://github.com/chevydan6/codex-renkuos/releases).
 
-```shell
-powershell -ExecutionPolicy ByPass -c "irm https://chatgpt.com/codex/install.ps1 | iex"
+The package includes a Terminal launcher, Codex icon, native CLI, code-mode
+host, and dependency declarations. It does not include account credentials.
+
+This version has **no native OS sandbox**. Each interactive launch warns you
+and requires typing `yes` to continue. Normal command approvals still apply.
+
+## Start from Terminal
+
+```sh
+/boot/system/apps/Codex/bin/codex
 ```
 
-The standalone installers download from `https://releases.openai.com/codex` by default and fall back to GitHub Releases if a metadata or asset download is unavailable. To force GitHub Releases, set `CODEX_INSTALLER_USE_RELEASES_OPENAI_COM` to `false` (`0` and `no` are also accepted):
+## Sign in
 
-```shell
-curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_INSTALLER_USE_RELEASES_OPENAI_COM=false sh
+Use **Sign in with Device Code**, or run:
+
+```sh
+/boot/system/apps/Codex/bin/codex login --device-auth
 ```
 
-```powershell
-$env:CODEX_INSTALLER_USE_RELEASES_OPENAI_COM='false'; irm https://chatgpt.com/codex/install.ps1 | iex
-```
+Enable device code authorization in your ChatGPT security settings first.
+Open the displayed link on a device with a browser, sign in using your usual
+ChatGPT method, and enter the one-time code. Google-linked sign-in was tested
+end to end on the development VM.
 
-Codex CLI can also be installed via the following package managers:
+## Source and testing
 
-```shell
-# Install using npm
-npm install -g @openai/codex
-```
+Displayed version: `0.171.0-alpha.5`. The source is upstream Codex snapshot
+`336b19ab26e0d4e36b16d8a21d668632cd800207` plus RenkuOS changes, not the exact
+upstream alpha release tag. No kernel changes are required by this port.
 
-```shell
-# Install using Homebrew
-brew install --cask codex
-```
+- [Native build instructions](third_party/renkuos/README.md)
+- [Stress-test report and limits](third_party/renkuos/STRESS-TEST-REPORT.md)
+- [Installer notes](third_party/renkuos/package/README.md)
 
-Then simply run `codex` to get started.
+Two buffered native builds passed after repeated unbuffered compiler archive
+failures. The compiler-only workaround is documented in the build notes; it
+is not included in the app runtime. The underlying OS fault remains
+undiagnosed. This experimental build has not had a security audit.
 
-<details>
-<summary>You can also go to the <a href="https://github.com/openai/codex/releases/latest">latest GitHub Release</a> and download the appropriate binary for your platform.</summary>
-
-Each GitHub Release contains many executables, but in practice, you likely want one of these:
-
-- macOS
-  - Apple Silicon/arm64: `codex-aarch64-apple-darwin.tar.gz`
-  - x86_64 (older Mac hardware): `codex-x86_64-apple-darwin.tar.gz`
-- Linux
-  - x86_64: `codex-x86_64-unknown-linux-musl.tar.gz`
-  - arm64: `codex-aarch64-unknown-linux-musl.tar.gz`
-
-Each archive contains a single entry with the platform baked into the name (e.g., `codex-x86_64-unknown-linux-musl`), so you likely want to rename it to `codex` after extracting it.
-
-</details>
-
-### Using Codex with your ChatGPT plan
-
-Run `codex` and select **Sign in with ChatGPT**. We recommend signing into your ChatGPT account to use Codex as part of your Plus, Pro, Business, Edu, or Enterprise plan. [Learn more about what's included in your ChatGPT plan](https://help.openai.com/en/articles/11369540-codex-in-chatgpt).
-
-You can also use Codex with an API key, but this requires [additional setup](https://developers.openai.com/codex/auth#sign-in-with-an-api-key).
-
-## Docs
-
-- [**Codex Documentation**](https://developers.openai.com/codex)
-- [**Contributing**](./docs/contributing.md)
-- [**Installing & building**](./docs/install.md)
-- [**Open source fund**](./docs/open-source-fund.md)
-
-This repository is licensed under the [Apache-2.0 License](LICENSE).
+The upstream source license is [Apache 2.0](LICENSE). Individual bundled
+components and artwork retain their respective notices and rights.
