@@ -10,7 +10,7 @@ and response. RenkuOS reports its Haiku foundation through `uname`.
 
 ## Quickstart on RenkuOS
 
-1. Download the [x86-64 RenkuOS installer](https://github.com/chevydan6/Codex-on-RenkuOS/releases/download/renkuos-v0.171.0-alpha.5-1/codex-renkuos-0.171.0-alpha.5-1-x86_64.hpkg).
+1. Download the [x86-64 RenkuOS installer](https://github.com/chevydan6/codex-renkuos/releases/download/renkuos-v0.171.0-alpha.5-1/codex-renkuos-0.171.0-alpha.5-1-x86_64.hpkg).
 2. Double-click the `.hpkg` on RenkuOS and follow the package installer.
 3. Open **Applications → Codex**, or use a desktop shortcut to the installed launcher.
 4. Read the no-sandbox warning and type `yes` if you agree to continue.
@@ -21,7 +21,7 @@ You can also install from Terminal:
 pkgman install ./codex-renkuos-0.171.0-alpha.5-1-x86_64.hpkg
 ```
 
-[All releases and checksums](https://github.com/chevydan6/Codex-on-RenkuOS/releases).
+[All releases and checksums](https://github.com/chevydan6/codex-renkuos/releases).
 
 The package includes a Terminal launcher, Codex icon, native CLI, code-mode
 host, and dependency declarations. It does not include account credentials.
