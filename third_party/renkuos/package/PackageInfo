@@ -1,0 +1,19 @@
+name codex_renkuos
+version 0.171.0~alpha.5-1
+architecture x86_64
+summary "Codex native experimental RenkuOS port"
+description "Native Codex CLI with a Terminal launcher. This experimental port has no OS sandbox; each interactive launch requires explicit consent."
+vendor "RenkuOS community port"
+packager "RenkuOS community port"
+licenses { "Apache-2.0" }
+copyrights { "OpenAI and contributors" }
+urls { "https://github.com/openai/codex" }
+provides { codex_renkuos = 0.171.0~alpha.5 }
+requires {
+ haiku
+ gcc_syslibs
+ openssl3
+ zstd
+ libexecinfo
+ ripgrep
+}

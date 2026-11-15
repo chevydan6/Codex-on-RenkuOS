@@ -1,0 +1,605 @@
+--- a/build.rs
++++ b/build.rs
+@@ -387,7 +387,7 @@
+     download_ninja_gn_binaries();
+   }
+ 
+-  download_rust_toolchain();
++  if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("haiku") { download_rust_toolchain(); }
+ 
+   // `#[cfg(...)]` attributes don't work as expected from build.rs -- they refer to the configuration
+   // of the host system which the build.rs script will be running on. In short, `cfg!(target_<os/arch>)`
+--- a/build/build_config.h
++++ b/build/build_config.h
+@@ -104,6 +104,8 @@
+ #define OS_WIN 1
+ #elif defined(__Fuchsia__)
+ #define OS_FUCHSIA 1
++#elif defined(__HAIKU__)
++#define OS_HAIKU 1
+ #elif defined(__FreeBSD__)
+ #define OS_FREEBSD 1
+ #elif defined(__NetBSD__)
+@@ -138,7 +140,7 @@
+ 
+ // For access to standard POSIXish features, use OS_POSIX instead of a
+ // more specific macro.
+-#if defined(OS_AIX) || defined(OS_ANDROID) || defined(OS_ASMJS) ||   \
++#if defined(OS_HAIKU) || defined(OS_AIX) || defined(OS_ANDROID) || defined(OS_ASMJS) ||   \
+     defined(OS_FREEBSD) || defined(OS_IOS) || defined(OS_LINUX) ||   \
+     defined(OS_CHROMEOS) || defined(OS_MAC) || defined(OS_NETBSD) || \
+     defined(OS_OPENBSD) || defined(OS_QNX) || defined(OS_SOLARIS) || \
+@@ -147,6 +149,11 @@
+ #endif
+ 
+ // OS build flags
++#if defined(OS_HAIKU)
++#define BUILDFLAG_INTERNAL_IS_HAIKU() (1)
++#else
++#define BUILDFLAG_INTERNAL_IS_HAIKU() (0)
++#endif
+ #if defined(OS_AIX)
+ #define BUILDFLAG_INTERNAL_IS_AIX() (1)
+ #else
+--- a/build/config/BUILDCONFIG.gn
++++ b/build/config/BUILDCONFIG.gn
+@@ -221,7 +221,7 @@
+   # TODO(dpranke): Add some sort of assert here that verifies that
+   # no toolchain omitted host_toolchain from its toolchain_args().
+ 
+-  if (host_os == "linux") {
++  if (host_os == "linux" || host_os == "haiku") {
+     if (target_os != "linux") {
+       host_toolchain = "//build/toolchain/linux:clang_$host_cpu"
+     } else if (is_clang) {
+@@ -261,7 +261,7 @@
+   # Targeting android on Mac is best-effort and not guaranteed to work.
+   assert(host_os == "linux", "Android builds are only supported on Linux.")
+   _default_toolchain = "//build/toolchain/android:android_clang_$target_cpu"
+-} else if (target_os == "chromeos" || target_os == "linux") {
++} else if (target_os == "chromeos" || target_os == "linux" || target_os == "haiku") {
+   # See comments in build/toolchain/cros/BUILD.gn about board compiles.
+   if (is_clang) {
+     _default_toolchain = "//build/toolchain/linux:clang_$target_cpu"
+@@ -335,6 +335,7 @@
+ is_fuchsia = current_os == "fuchsia"
+ is_ios = current_os == "ios"
+ is_linux = current_os == "linux"
++is_haiku = current_os == "haiku"
+ is_mac = current_os == "mac"
+ is_wasm = current_os == "emscripten"
+ is_watchos = current_os == "watchos"
+--- a/build/config/clang/BUILD.gn
++++ b/build/config/clang/BUILD.gn
+@@ -185,6 +185,9 @@
+         } else {
+           assert(false)  # Unhandled cpu type
+         }
++      } else if (is_haiku) {
++        _dir = "haiku"
++        _suffix = "-x86_64"
+       } else if (is_apple) {
+         _dir = "darwin"
+       } else if (is_linux || is_chromeos) {
+--- a/build/config/compiler_cpu_abi.gn
++++ b/build/config/compiler_cpu_abi.gn
+@@ -48,7 +48,10 @@
+ if ((is_posix && !is_apple) || is_fuchsia) {
+   # simplicity we always explicitly set the architecture.
+   if (current_cpu == "x64") {
+-    if (is_clang && !is_android && !is_fuchsia && !is_chromeos_device) {
++    if (is_haiku) {
++      cpu_abi_cflags += [ "--target=x86_64-unknown-haiku" ]
++      cpu_abi_ldflags += [ "--target=x86_64-unknown-haiku" ]
++    } else if (is_clang && !is_android && !is_fuchsia && !is_chromeos_device) {
+       cpu_abi_cflags += [ "--target=x86_64-unknown-linux-gnu" ]
+       cpu_abi_ldflags += [ "--target=x86_64-unknown-linux-gnu" ]
+     } else {
+--- a/build/config/rust.gni
++++ b/build/config/rust.gni
+@@ -141,7 +141,7 @@
+ # The rustc_revision is used to introduce a dependency on the toolchain version
+ # (so e.g. rust targets are rebuilt, and the standard library is re-copied when
+ # the toolchain changes). It is left empty for custom toolchains.
+-rustc_revision = ""
++rustc_revision = "haiku-native"
+ 
+ if (enable_rust) {
+   if (use_chromium_rust_toolchain) {
+@@ -239,6 +239,8 @@
+     # Best guess for other future platforms.
+     rust_abi_target = current_cpu + "-unknown-linux-gnu"
+   }
++} else if (is_haiku) {
++  rust_abi_target = "x86_64-unknown-haiku"
+ } else if (is_android) {
+   import("//build/config/android/abi.gni")
+   if (android_abi_target == "i686-linux-android") {
+--- a/build/rust/known-target-triples.txt
++++ b/build/rust/known-target-triples.txt
+@@ -45,3 +45,5 @@
+ s390x-unknown-linux-gnu
+ x86_64-unknown-linux-musl
+ aarch64-unknown-linux-musl
++
++x86_64-unknown-haiku
+--- a/build/rust/std/BUILD.gn
++++ b/build/rust/std/BUILD.gn
+@@ -80,6 +80,10 @@
+     "rustc_std_workspace_std",
+   ]
+ 
++  if (is_haiku) {
++    skip_stdlib_files -= [ "profiler_builtins" ]
++  }
++
+   config("stdlib_dependent_libs") {
+     # TODO(crbug.com/40264561): These should really be `libs`, however that
+     # breaks. Normally, we specify lib files with the `.lib` suffix but
+--- a/build/toolchain/linux/BUILD.gn
++++ b/build/toolchain/linux/BUILD.gn
+@@ -110,7 +110,7 @@
+ 
+   toolchain_args = {
+     current_cpu = "x64"
+-    current_os = "linux"
++    current_os = host_os
+   }
+ }
+ 
+--- a/build/toolchain/toolchain.gni
++++ b/build/toolchain/toolchain.gni
+@@ -74,7 +74,7 @@
+   host_shlib_extension = ".dylib"
+ } else if (host_os == "win") {
+   host_shlib_extension = ".dll"
+-} else if (host_os == "linux" || host_os == "aix" || host_os == "zos") {
++} else if (host_os == "linux" || host_os == "haiku" || host_os == "aix" || host_os == "zos") {
+   host_shlib_extension = ".so"
+ } else {
+   assert(false, "Host platform not supported")
+--- a/third_party/abseil-cpp/absl/base/internal/sysinfo.cc
++++ b/third_party/abseil-cpp/absl/base/internal/sysinfo.cc
+@@ -53,6 +53,10 @@
+ #include <string.h>
+ 
+ #include <cassert>
++#if defined(__HAIKU__)
++#include <OS.h>
++#endif
++
+ #include <cerrno>
+ #include <cstdint>
+ #include <cstdio>
+@@ -465,6 +469,10 @@
+   return static_cast<pid_t>(zx_thread_self());
+ }
+ 
++#elif defined(__HAIKU__)
++
++pid_t GetTID() { return find_thread(nullptr); }
++
+ #else
+ 
+ // Fallback implementation of `GetTID` using `pthread_self`.
+--- a/third_party/libc++/src/include/__config
++++ b/third_party/libc++/src/include/__config
+@@ -376,7 +376,7 @@
+ #    define _LIBCPP_HAS_TRIVIAL_CONDVAR_DESTRUCTION 0
+ #  endif
+ 
+-#  if defined(__BIONIC__) || defined(__NuttX__) || defined(__Fuchsia__) || defined(__wasi__) ||                        \
++#  if defined(__HAIKU__) || defined(__BIONIC__) || defined(__NuttX__) || defined(__Fuchsia__) || defined(__wasi__) ||                        \
+       _LIBCPP_HAS_MUSL_LIBC || defined(__OpenBSD__) || _LIBCPP_LIBC_LLVM_LIBC
+ #    define _LIBCPP_PROVIDES_DEFAULT_RUNE_TABLE
+ #  endif
+--- a/third_party/libc++/src/include/cctype
++++ b/third_party/libc++/src/include/cctype
+@@ -50,6 +50,23 @@
+ #    pragma GCC system_header
+ #  endif
+ 
++#  if defined(__HAIKU__)
++#    undef isalnum
++#    undef isalpha
++#    undef isblank
++#    undef iscntrl
++#    undef isdigit
++#    undef isgraph
++#    undef islower
++#    undef isprint
++#    undef ispunct
++#    undef isspace
++#    undef isupper
++#    undef isxdigit
++#    undef tolower
++#    undef toupper
++#  endif
++
+ _LIBCPP_BEGIN_NAMESPACE_STD
+ 
+ using ::isalnum _LIBCPP_USING_IF_EXISTS;
+--- a/third_party/partition_alloc/src/partition_alloc/build_config.h
++++ b/third_party/partition_alloc/src/partition_alloc/build_config.h
+@@ -90,6 +90,8 @@
+ #define PA_IS_WIN
+ #elif defined(__Fuchsia__)
+ #define PA_IS_FUCHSIA
++#elif defined(__HAIKU__)
++#define PA_IS_HAIKU
+ #elif defined(__FreeBSD__)
+ #define PA_IS_FREEBSD
+ #elif defined(__NetBSD__)
+@@ -117,7 +119,7 @@
+ #define PA_IS_BSD
+ #endif
+ 
+-#if defined(PA_IS_AIX) || defined(PA_IS_ASMJS) || defined(PA_IS_FREEBSD) ||  \
++#if defined(PA_IS_HAIKU) || defined(PA_IS_AIX) || defined(PA_IS_ASMJS) || defined(PA_IS_FREEBSD) ||  \
+     defined(PA_IS_IOS) || defined(PA_IS_LINUX) || defined(PA_IS_CHROMEOS) || \
+     defined(PA_IS_MAC) || defined(PA_IS_NETBSD) || defined(PA_IS_OPENBSD) || \
+     defined(PA_IS_QNX) || defined(PA_IS_SOLARIS) ||                          \
+--- a/third_party/partition_alloc/src/partition_alloc/page_allocator_internals_posix.h
++++ b/third_party/partition_alloc/src/partition_alloc/page_allocator_internals_posix.h
+@@ -6,7 +6,9 @@
+ #define PARTITION_ALLOC_PAGE_ALLOCATOR_INTERNALS_POSIX_H_
+ 
+ #include <sys/mman.h>
++#if !defined(__HAIKU__)
+ #include <sys/syscall.h>
++#endif
+ 
+ #include <algorithm>
+ #include <atomic>
+--- a/third_party/partition_alloc/src/partition_alloc/partition_alloc_base/debug/stack_trace_posix.cc
++++ b/third_party/partition_alloc/src/partition_alloc/partition_alloc_base/debug/stack_trace_posix.cc
+@@ -14,6 +14,19 @@
+ #include "partition_alloc/partition_alloc_base/posix/eintr_wrapper.h"
+ #include "partition_alloc/partition_alloc_base/strings/safe_sprintf.h"
+ 
++#if defined(__HAIKU__)
++namespace partition_alloc::internal::base::debug {
++void OutputStackTrace(unsigned index, uintptr_t address, uintptr_t, const char*, uintptr_t) {
++  char buffer[128];
++  strings::SafeSPrintf(buffer, "#%02d 0x%0x\n", index, address);
++  PA_RAW_LOG(INFO, buffer);
++}
++void PrintStackTrace(const void** trace, size_t count) {
++  for (size_t i = 0; i < count; ++i)
++    OutputStackTrace(static_cast<unsigned>(i), reinterpret_cast<uintptr_t>(trace[i]), 0, nullptr, 0);
++}
++}
++#else
+ #if !PA_BUILDFLAG(IS_ANDROID) && !PA_BUILDFLAG(IS_APPLE)
+ #include <link.h>  // For ElfW() macro.
+ #endif
+@@ -428,3 +441,5 @@
+ #endif  // !PA_BUILDFLAG(IS_ANDROID)
+ 
+ }  // namespace partition_alloc::internal::base::debug
++
++#endif  // __HAIKU__
+--- a/third_party/partition_alloc/src/partition_alloc/partition_alloc_base/rand_util_posix.cc
++++ b/third_party/partition_alloc/src/partition_alloc/partition_alloc_base/rand_util_posix.cc
+@@ -5,7 +5,9 @@
+ #include "partition_alloc/partition_alloc_base/rand_util.h"
+ 
+ #include <fcntl.h>
++#if !defined(__HAIKU__)
+ #include <sys/syscall.h>
++#endif
+ #include <unistd.h>
+ 
+ #include <cerrno>
+--- a/third_party/partition_alloc/src/partition_alloc/stack/stack.cc
++++ b/third_party/partition_alloc/src/partition_alloc/stack/stack.cc
+@@ -6,6 +6,9 @@
+ 
+ #include <cstdint>
+ #include <limits>
++#if defined(__HAIKU__)
++#include <OS.h>
++#endif
+ 
+ #include "partition_alloc/build_config.h"
+ #include "partition_alloc/buildflags.h"
+@@ -49,6 +52,13 @@
+ 
+ void* GetStackTop() {
+   return pthread_get_stackaddr_np(pthread_self());
++}
++
++#elif defined(__HAIKU__)
++
++void* GetStackTop() {
++  thread_info info;
++  return get_thread_info(find_thread(nullptr), &info) == B_OK ? info.stack_end : nullptr;
+ }
+ 
+ #elif PA_BUILDFLAG(IS_POSIX) || PA_BUILDFLAG(IS_FUCHSIA)
+--- a/v8/BUILD.gn
++++ b/v8/BUILD.gn
+@@ -596,6 +596,10 @@
+ 
+ if (v8_enable_snapshot_native_code_counters == "") {
+   v8_enable_snapshot_native_code_counters = v8_enable_debugging_features
++}
++
++if (v8_enable_pointer_compression == "") {
++   v8_enable_pointer_compression = !is_haiku
+ }
+ 
+ if (v8_enable_drumbrake && v8_enable_webassembly) {
+@@ -7428,6 +7432,11 @@
+       "//third_party/fuchsia-sdk/sdk/pkg/component_incoming_cpp",
+       "//third_party/fuchsia-sdk/sdk/pkg/zx",
+     ]
++  } else if (is_haiku) {
++    sources += [
++      "src/base/debug/stack_trace_posix.cc",
++      "src/base/platform/platform-haiku.cc",
++    ]
+   } else if (is_mac) {
+     sources += [
+       "src/base/debug/stack_trace_posix.cc",
+@@ -8357,6 +8366,8 @@
+ 
+ group("v8_fuzzers") {
+   testonly = true
++
++
+   data_deps = [
+     ":v8_simple_inspector_fuzzer",
+     ":v8_simple_json_fuzzer",
+--- a/v8/include/v8config.h
++++ b/v8/include/v8config.h
+@@ -80,6 +80,7 @@
+ //  V8_OS_CYGWIN        - Cygwin
+ //  V8_OS_DRAGONFLYBSD  - DragonFlyBSD
+ //  V8_OS_FREEBSD       - FreeBSD
++//  V8_OS_HAIKU         - Haiku
+ //  V8_OS_FUCHSIA       - Fuchsia
+ //  V8_OS_LINUX         - Linux (Android, ChromeOS, Linux, ...)
+ //  V8_OS_DARWIN        - Darwin (macOS, iOS)
+@@ -146,6 +147,11 @@
+ # define V8_OS_FREEBSD 1
+ # define V8_OS_POSIX 1
+ # define V8_OS_STRING "freebsd"
++
++#elif defined(__HAIKU__)
++# define V8_OS_HAIKU 1
++# define V8_OS_POSIX 1
++# define V8_OS_STRING "haiku"
+ 
+ #elif defined(__Fuchsia__)
+ # define V8_OS_FUCHSIA 1
+--- a/v8/src/base/debug/stack_trace_posix.cc
++++ b/v8/src/base/debug/stack_trace_posix.cc
+@@ -25,14 +25,15 @@
+ #include <string>
+ #include <vector>
+ 
+-#if V8_LIBC_GLIBC || V8_LIBC_BSD || V8_LIBC_UCLIBC || V8_OS_SOLARIS
++#if V8_LIBC_GLIBC || V8_LIBC_BSD || V8_LIBC_UCLIBC || V8_OS_SOLARIS || V8_OS_HAIKU
+ #define HAVE_EXECINFO_H 1
+ #endif
+ 
+-#if HAVE_EXECINFO_H
++#if defined(HAVE_EXECINFO_H)
+ #include <cxxabi.h>
+ #include <execinfo.h>
+ #endif
++
+ #if V8_OS_DARWIN
+ #include <AvailabilityMacros.h>
+ #endif
+--- a/v8/src/base/export-template.h
++++ b/v8/src/base/export-template.h
+@@ -83,6 +83,7 @@
+ // definition sites instead.
+ #define EXPORT_TEMPLATE_DECLARE_MSVC_HACK(export, _)
+ #define EXPORT_TEMPLATE_DEFINE_MSVC_HACK(export, _) export
++#define EXPORT_TEMPLATE_TEST_MSVC_HACK_DEFAULT(...) true
+ 
+ // EXPORT_TEMPLATE_STYLE is an internal helper macro that identifies which
+ // export style needs to be used for the provided FOO_EXPORT macro definition.
+@@ -159,5 +160,6 @@
+ #undef EXPORT_TEMPLATE_TEST
+ #undef EXPORT_TEMPLATE_TEST_DEFAULT_DEFAULT
+ #undef EXPORT_TEMPLATE_TEST_MSVC_HACK_MSVC_HACK
++#undef EXPORT_TEMPLATE_TEST_MSVC_HACK_DEFAULT
+ 
+ #endif  // V8_BASE_EXPORT_TEMPLATE_H_
+--- a/v8/src/base/platform/memory.h
++++ b/v8/src/base/platform/memory.h
+@@ -27,7 +27,7 @@
+ #include <malloc.h>
+ #endif
+ 
+-#if (V8_OS_POSIX && !V8_OS_AIX && !V8_OS_SOLARIS && !V8_OS_ZOS && !V8_OS_OPENBSD) || V8_OS_WIN
++#if (V8_OS_POSIX && !V8_OS_AIX && !V8_OS_SOLARIS && !V8_OS_ZOS && !V8_OS_OPENBSD && !V8_OS_HAIKU) || V8_OS_WIN
+ #define V8_HAS_MALLOC_USABLE_SIZE 1
+ #endif
+ 
+--- a/v8/src/base/platform/platform-posix.cc
++++ b/v8/src/base/platform/platform-posix.cc
+@@ -74,7 +74,7 @@
+ #include <sys/resource.h>
+ #endif
+ 
+-#if !defined(_AIX) && !defined(V8_OS_FUCHSIA) && !V8_OS_ZOS
++#if !defined(_AIX) && !defined(V8_OS_FUCHSIA) && !V8_OS_ZOS && !defined(__HAIKU__)
+ #include <sys/syscall.h>
+ #endif
+ 
+@@ -655,6 +655,8 @@
+   if (ret != 0 && errno == EINVAL) {
+     ret = madvise(reinterpret_cast<caddr_t>(address), size, MADV_DONTNEED);
+   }
++#elif defined(__HAIKU__)
++  int ret = posix_madvise(address, size, MADV_FREE);
+ #else
+   int ret = madvise(address, size, MADV_DONTNEED);
+ #endif
+@@ -1423,7 +1425,7 @@
+ // keep this version in POSIX as most Linux-compatible derivatives will
+ // support it. MacOS and FreeBSD are different here.
+ #if !defined(V8_OS_FREEBSD) && !defined(V8_OS_DARWIN) && !defined(_AIX) && \
+-    !defined(V8_OS_SOLARIS)
++    !defined(V8_OS_SOLARIS) && !defined(V8_OS_HAIKU)
+ 
+ namespace {
+ #if DEBUG
+--- a/v8/src/common/thread-local-storage.h
++++ b/v8/src/common/thread-local-storage.h
+@@ -7,7 +7,7 @@
+ 
+ #include "include/v8config.h"
+ 
+-#if defined(COMPONENT_BUILD) || defined(V8_TLS_USED_IN_LIBRARY)
++#if defined(COMPONENT_BUILD) || defined(V8_TLS_USED_IN_LIBRARY) || defined(__HAIKU__)
+ #define V8_TLS_LIBRARY_MODE 1
+ #else
+ #define V8_TLS_LIBRARY_MODE 0
+--- a/v8/src/libsampler/sampler.cc
++++ b/v8/src/libsampler/sampler.cc
+@@ -19,7 +19,7 @@
+ 
+ #include "src/base/platform/memory-protection-key.h"
+ 
+-#if !V8_OS_QNX && !V8_OS_AIX && !V8_OS_ZOS
++#if !V8_OS_QNX && !V8_OS_AIX && !V8_OS_ZOS && !V8_OS_HAIKU
+ #include <sys/syscall.h>
+ #endif
+ 
+@@ -31,7 +31,7 @@
+ #include <mach/mach.h>
+ // OpenBSD doesn't have <ucontext.h>. ucontext_t lives in <signal.h>
+ // and is a typedef for struct sigcontext. There is no uc_mcontext.
+-#elif !V8_OS_OPENBSD
++#elif !V8_OS_OPENBSD && !V8_OS_HAIKU
+ #include <ucontext.h>
+ #endif
+ 
+@@ -530,6 +530,16 @@
+   state->sp = reinterpret_cast<void*>(mcontext.__gregs[_REG_SP]);
+   state->fp = reinterpret_cast<void*>(mcontext.__gregs[_REG_FP]);
+ #endif  // V8_HOST_ARCH_*
++#elif V8_OS_HAIKU
++#if V8_HOST_ARCH_IA32
++  state->pc = reinterpret_cast<void*>(mcontext.eip);
++  state->sp = reinterpret_cast<void*>(mcontext.esp);
++  state->fp = reinterpret_cast<void*>(mcontext.ebp);
++#elif V8_HOST_ARCH_X64
++  state->pc = reinterpret_cast<void*>(mcontext.rip);
++  state->sp = reinterpret_cast<void*>(mcontext.rsp);
++  state->fp = reinterpret_cast<void*>(mcontext.rbp);
++#endif  // V8_HOST_ARCH_*
+ #elif V8_OS_NETBSD
+ #if V8_HOST_ARCH_IA32
+   state->pc = reinterpret_cast<void*>(mcontext.__gregs[_REG_EIP]);
+--- a/v8/tools/mb/mb.py
++++ b/v8/tools/mb/mb.py
+@@ -937,12 +937,15 @@
+       subdir, exe = 'linux64', 'gn'
+     elif self.platform == 'darwin':
+       subdir, exe = 'mac', 'gn'
++    elif self.platform == 'haiku1':
++      subdir, exe = 'haiku','gn'
++      gn_path = "/bin/gn"
+     else:
+       subdir, exe = 'win', 'gn.exe'
+ 
+     arch = platform.machine()
+     if (arch.startswith('s390') or arch.startswith('ppc') or
+-        self.platform.startswith('aix')):
++        self.platform.startswith('aix') or self.platform.startswith('haiku')):
+       # use gn in PATH
+       gn_path = 'gn'
+     else:
+--- a/build/config/BUILD.gn
++++ b/build/config/BUILD.gn
+@@ -194,6 +194,8 @@
+         "ole32.lib",
+       ]
+     }
++  } else if (is_haiku) {
++    libs = [ "network", "bsd", "execinfo" ]
+   } else if (is_android) {
+     libs = [
+       "dl",
+--- /dev/null
++++ b/v8/src/base/platform/platform-haiku.cc
+@@ -0,0 +1,72 @@
++// Copyright 2012 the V8 project authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++// Platform-specific code for Haiku goes here. For the POSIX-compatible
++// parts, the implementation is in platform-posix.cc.
++
++#include <pthread.h>
++#include <semaphore.h>
++#include <signal.h>
++#include <stdlib.h>
++#include <sys/resource.h>
++#include <sys/time.h>
++#include <sys/types.h>
++
++#include <fcntl.h>  // open
++#include <sys/mman.h>   // mmap & munmap
++#include <sys/stat.h>   // open
++#include <unistd.h>     // sysconf
++#include <errno.h>
++#include <limits.h>
++#include <stdarg.h>
++#include <strings.h>    // index
++
++#include <cmath>
++
++#include <OS.h>
++
++#undef MAP_TYPE
++
++#include "src/base/macros.h"
++#include "src/base/platform/platform-posix-time.h"
++#include "src/base/platform/platform-posix.h"
++#include "src/base/platform/platform.h"
++
++namespace v8 {
++namespace base {
++
++TimezoneCache* OS::CreateTimezoneCache() {
++  return new PosixDefaultTimezoneCache();
++}
++
++std::vector<OS::SharedLibraryAddress> OS::GetSharedLibraryAddresses() {
++  return std::vector<SharedLibraryAddress>();
++}
++
++void OS::SignalCodeMovingGC() {}
++
++void OS::AdjustSchedulingParams() {}
++
++std::optional<OS::MemoryRange> OS::GetFirstFreeMemoryRangeWithin(
++    OS::Address boundary_start, OS::Address boundary_end, size_t minimum_size,
++    size_t alignment) {
++  return std::nullopt;
++}
++
++// static
++Stack::StackSlot Stack::ObtainCurrentThreadStackStart() {
++  thread_info threadInfo;
++  return get_thread_info(find_thread(nullptr), &threadInfo) == B_OK
++             ? threadInfo.stack_end : nullptr;
++}
++
++// static
++Stack::StackSlot Stack::ObtainCurrentThreadStackReservedLimit() {
++  thread_info info;
++  return get_thread_info(find_thread(nullptr), &info) == B_OK
++             ? info.stack_base : nullptr;
++}
++
++}  // namespace base
++}  // namespace v8

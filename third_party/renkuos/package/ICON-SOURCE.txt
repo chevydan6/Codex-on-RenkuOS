@@ -1,0 +1,5 @@
+Codex app icon mirror:
+https://github.com/backnotprop/orchestrator/blob/main/assets/providers/codex-icon-dark.png
+Its provenance is documented by that repository as the official Codex macOS
+application artwork. The artwork identifies Codex; this package is an
+experimental community port, not an official OpenAI release.
